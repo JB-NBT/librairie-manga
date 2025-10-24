@@ -30,27 +30,31 @@ class BookController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validatedData = $request->validate([
             'title' => 'required|string|max:255',
+            'type' => 'required|string',
             'web_link' => 'required|url',
             'description' => 'nullable|string',
-            'type' => 'required|in:manga,webtoon,autre',
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
-            'is_featured' => 'boolean',
+            'image' => 'nullable|image|max:2048',
+            'is_featured' => 'nullable|boolean',
         ]);
 
-        // Upload de l'image
+        $book = new Book();
+        $book->title = $validatedData['title'];
+        $book->type = $validatedData['type'];
+        $book->web_link = $validatedData['web_link'];
+        $book->description = $validatedData['description'];
+        $book->is_featured = $validatedData['is_featured'] ?? false;
+
+        // Gestion de l'image (si présente)
         if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('books', 'public');
-            $validated['image_path'] = $imagePath;
+            $imagePath = $request->file('image')->store('images', 'public');
+            $book->image_path = $imagePath;
         }
 
-        $validated['is_featured'] = $request->has('is_featured');
+        $book->save();
 
-        Book::create($validated);
-
-        return redirect()->route('books.index')
-            ->with('success', 'Lecture ajoutée avec succès !');
+        return redirect()->route('books.index')->with('success', 'Livre ajouté avec succès!');
     }
 
     /**
@@ -66,31 +70,36 @@ class BookController extends Controller
      */
     public function update(Request $request, Book $book)
     {
-        $validated = $request->validate([
+        $validatedData = $request->validate([
             'title' => 'required|string|max:255',
+            'type' => 'required|string',
             'web_link' => 'required|url',
             'description' => 'nullable|string',
-            'type' => 'required|in:manga,webtoon,autre',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
-            'is_featured' => 'boolean',
+            'image' => 'nullable|image|max:2048',
+            'is_featured' => 'nullable|boolean',
         ]);
 
-        // Upload de la nouvelle image si fournie
+        $book->title = $validatedData['title'];
+        $book->type = $validatedData['type'];
+        $book->web_link = $validatedData['web_link'];
+        $book->description = $validatedData['description'];
+        $book->is_featured = $validatedData['is_featured'] ?? false;
+
+        // Mise à jour de l'image (si présente)
         if ($request->hasFile('image')) {
-            // Supprime l'ancienne image
-            $book->deleteImage();
-            
-            $imagePath = $request->file('image')->store('books', 'public');
-            $validated['image_path'] = $imagePath;
+            // Supprimer l'ancienne image (si elle existe)
+            if ($book->image_path) {
+                Storage::disk('public')->delete($book->image_path);
+            }
+            $imagePath = $request->file('image')->store('images', 'public');
+            $book->image_path = $imagePath;
         }
 
-        $validated['is_featured'] = $request->has('is_featured');
+        $book->save();
 
-        $book->update($validated);
-
-        return redirect()->route('books.index')
-            ->with('success', 'Lecture mise à jour avec succès !');
+        return redirect()->route('books.index')->with('success', 'Livre mis à jour avec succès!');
     }
+
 
     /**
      * Supprime une lecture
