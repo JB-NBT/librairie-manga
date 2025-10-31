@@ -5,15 +5,28 @@ namespace App\Http\Controllers;
 use App\Models\Book;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class BookController extends Controller
 {
+    use AuthorizesRequests;
+
     /**
-     * Affiche toutes les lectures
+     * Appliquer le middleware d'authentification
+     */
+    public function __construct()
+    {
+        $this->middleware('auth');
+    }
+
+    /**
+     * Affiche toutes les lectures de l'utilisateur connecté
      */
     public function index()
     {
-        $books = Book::latest()->get();
+        // Récupérer uniquement les livres de l'utilisateur connecté
+        $books = auth()->user()->books()->latest()->get();
+        
         return view('books.index', compact('books'));
     }
 
@@ -22,6 +35,9 @@ class BookController extends Controller
      */
     public function create()
     {
+        // Vérifier la permission
+        $this->authorize('create', Book::class);
+        
         return view('books.create');
     }
 
@@ -30,31 +46,83 @@ class BookController extends Controller
      */
     public function store(Request $request)
     {
-        $validatedData = $request->validate([
-            'title' => 'required|string|max:255',
-            'type' => 'required|string',
-            'web_link' => 'required|url',
-            'description' => 'nullable|string',
-            'image' => 'nullable|image|max:2048',
-            'is_featured' => 'nullable|boolean',
+        // Vérifier la permission
+        $this->authorize('create', Book::class);
+
+        // Validation des données
+        $validated = $request->validate([
+            'title' => [
+                'required',
+                'string',
+                'max:255',
+                'min:2'
+            ],
+            'type' => [
+                'required',
+                'in:manga,webtoon,autre'
+            ],
+            'web_link' => [
+                'required',
+                'url',
+                'max:500'
+            ],
+            'description' => [
+                'nullable',
+                'string',
+                'max:1000'
+            ],
+            'image' => [
+                'required',
+                'image',
+                'mimes:jpeg,png,jpg,gif,webp',
+                'max:2048' // 2MB max
+            ],
+            'is_featured' => [
+                'nullable',
+                'boolean'
+            ],
+        ], [
+            // Messages personnalisés en français
+            'title.required' => 'Le titre est obligatoire.',
+            'title.min' => 'Le titre doit contenir au moins 2 caractères.',
+            'title.max' => 'Le titre ne peut pas dépasser 255 caractères.',
+            'type.required' => 'Le type est obligatoire.',
+            'type.in' => 'Le type doit être manga, webtoon ou autre.',
+            'web_link.required' => 'Le lien web est obligatoire.',
+            'web_link.url' => 'Le lien doit être une URL valide.',
+            'image.required' => 'Une image de couverture est obligatoire.',
+            'image.image' => 'Le fichier doit être une image.',
+            'image.mimes' => 'L\'image doit être au format: jpeg, png, jpg, gif ou webp.',
+            'image.max' => 'L\'image ne peut pas dépasser 2MB.',
         ]);
 
-        $book = new Book();
-        $book->title = $validatedData['title'];
-        $book->type = $validatedData['type'];
-        $book->web_link = $validatedData['web_link'];
-        $book->description = $validatedData['description'];
-        $book->is_featured = $validatedData['is_featured'] ?? false;
+        // Créer le livre et l'associer à l'utilisateur connecté
+        $book = new Book($validated);
+        $book->user_id = auth()->id();
+        $book->is_featured = $request->boolean('is_featured');
 
-        // Gestion de l'image (si présente)
+        // Gestion de l'upload d'image
         if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('images', 'public');
+            $imagePath = $request->file('image')->store('books', 'public');
             $book->image_path = $imagePath;
         }
 
         $book->save();
 
-        return redirect()->route('books.index')->with('success', 'Livre ajouté avec succès!');
+        return redirect()
+            ->route('books.index')
+            ->with('success', 'Lecture ajoutée avec succès !');
+    }
+
+    /**
+     * Affiche une lecture spécifique
+     */
+    public function show(Book $book)
+    {
+        // Vérifier que l'utilisateur peut voir ce livre
+        $this->authorize('view', $book);
+        
+        return view('books.show', compact('book'));
     }
 
     /**
@@ -62,6 +130,9 @@ class BookController extends Controller
      */
     public function edit(Book $book)
     {
+        // Vérifier que l'utilisateur peut éditer ce livre
+        $this->authorize('update', $book);
+        
         return view('books.edit', compact('book'));
     }
 
@@ -70,46 +141,84 @@ class BookController extends Controller
      */
     public function update(Request $request, Book $book)
     {
-        $validatedData = $request->validate([
-            'title' => 'required|string|max:255',
-            'type' => 'required|string',
-            'web_link' => 'required|url',
-            'description' => 'nullable|string',
-            'image' => 'nullable|image|max:2048',
-            'is_featured' => 'nullable|boolean',
+        // Vérifier la permission
+        $this->authorize('update', $book);
+
+        // Validation
+        $validated = $request->validate([
+            'title' => [
+                'required',
+                'string',
+                'max:255',
+                'min:2'
+            ],
+            'type' => [
+                'required',
+                'in:manga,webtoon,autre'
+            ],
+            'web_link' => [
+                'required',
+                'url',
+                'max:500'
+            ],
+            'description' => [
+                'nullable',
+                'string',
+                'max:1000'
+            ],
+            'image' => [
+                'nullable',
+                'image',
+                'mimes:jpeg,png,jpg,gif,webp',
+                'max:2048'
+            ],
+            'is_featured' => [
+                'nullable',
+                'boolean'
+            ],
+        ], [
+            'title.required' => 'Le titre est obligatoire.',
+            'title.min' => 'Le titre doit contenir au moins 2 caractères.',
+            'type.in' => 'Le type doit être manga, webtoon ou autre.',
+            'web_link.url' => 'Le lien doit être une URL valide.',
+            'image.image' => 'Le fichier doit être une image.',
+            'image.max' => 'L\'image ne peut pas dépasser 2MB.',
         ]);
 
-        $book->title = $validatedData['title'];
-        $book->type = $validatedData['type'];
-        $book->web_link = $validatedData['web_link'];
-        $book->description = $validatedData['description'];
-        $book->is_featured = $validatedData['is_featured'] ?? false;
+        // Mise à jour des données
+        $book->fill($validated);
+        $book->is_featured = $request->boolean('is_featured');
 
-        // Mise à jour de l'image (si présente)
+        // Mise à jour de l'image si présente
         if ($request->hasFile('image')) {
-            // Supprimer l'ancienne image (si elle existe)
+            // Supprimer l'ancienne image
             if ($book->image_path) {
                 Storage::disk('public')->delete($book->image_path);
             }
-            $imagePath = $request->file('image')->store('images', 'public');
+            
+            $imagePath = $request->file('image')->store('books', 'public');
             $book->image_path = $imagePath;
         }
 
         $book->save();
 
-        return redirect()->route('books.index')->with('success', 'Livre mis à jour avec succès!');
+        return redirect()
+            ->route('books.index')
+            ->with('success', 'Lecture mise à jour avec succès !');
     }
-
 
     /**
      * Supprime une lecture
      */
     public function destroy(Book $book)
     {
-        $book->deleteImage();
-        $book->delete();
+        // Vérifier la permission
+        $this->authorize('delete', $book);
 
-        return redirect()->route('books.index')
+        $book->delete(); // L'image sera supprimée automatiquement via le hook
+
+        return redirect()
+            ->route('books.index')
             ->with('success', 'Lecture supprimée avec succès !');
     }
 }
