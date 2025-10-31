@@ -12,9 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('books', function (Blueprint $table) {
-            $table->boolean('is_featured')->default(false); // Ajoute la colonne is_featured
+            if (!Schema::hasColumn('books', 'is_featured')) {
+                $table->boolean('is_featured')->default(false);
+            }
         });
     }
+
 
     /**
      * Reverse the migrations.
